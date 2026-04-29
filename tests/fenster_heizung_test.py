@@ -7,18 +7,7 @@ from homeassistant.setup import async_setup_component
 
 async def test_fenster_heizung_automation(hass, enable_custom_integrations):
     # Set up blueprints directory in the HA config
-    blueprints_dir = hass.config.path("blueprints/automation")
-    os.makedirs(blueprints_dir, exist_ok=True)
-    shutil.copy(
-        os.path.join(
-            os.path.dirname(__file__),
-            "..",
-            "blueprints",
-            "automation",
-            "fenster_heizung.yaml",
-        ),
-        os.path.join(blueprints_dir, "fenster_heizung.yaml"),
-    )
+    blueprints_dir = hass.config.path("../blueprints/automation")
 
     # Set up mock entities
     hass.states.async_set("binary_sensor.window_bedroom", "off")
