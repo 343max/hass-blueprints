@@ -1,0 +1,115 @@
+blueprint:
+  name: Window Heating Control
+  description: >
+    Pauses heating in a room when a window is opened and resumes the schedule
+    once all windows are closed.
+
+    The heating is only touched when it is in **auto** mode.
+    If it is **off** (summer), nothing happens.
+    The marker temperature of 6 °C indicates that the heating was paused by
+    this blueprint. If the temperature is changed manually while a window is
+    open, the blueprint remains passive afterwards.
+  domain: automation
+  source_url: https://raw.githubusercontent.com/343max/hass-blueprints/main/blueprints/automation/fenster_heizung.yaml
+
+  input:
+    climate_target:
+      name: Thermostat
+      description: The climate entity (thermostat) for the room.
+      selector:
+        entity:
+          domain: climate
+          multiple: false
+
+    window_sensors:
+      name: Window / Door Sensors
+      description: All door and window sensors in the room.
+      selector:
+        entity:
+          domain: binary_sensor
+          device_class:
+            - window
+            - door
+            - opening
+          multiple: true
+
+    trigger_delay:
+      name: Trigger Delay
+      description: >
+        Seconds a sensor must remain in the new state before the automation
+        reacts (applies to both opening and closing).
+      default: 0
+      selector:
+        number:
+          min: 0
+          max: 600
+          unit_of_measurement: "seconds"
+          mode: slider
+          step: 1
+
+variables:
+  climate: "!input climate_target"
+  windows: "!input window_sensors"
+  any_open: "{{ windows | select('is_state', 'on') | list | count > 0 }}"
+  is_paused: "{{ state_attr(climate, 'temperature') | float(0) == 6.0 }}"
+  mode: "{{ states(climate) }}"
+
+mode: restart
+
+trigger:
+  - platform: state
+    entity_id: !input window_sensors
+    to: "on"
+    for: !input trigger_delay
+  - platform: state
+    entity_id: !input window_sensors
+    to: "off"
+    for: !input trigger_delay
+
+action:
+  - choose:
+      # --- WINDOW OPENED ---
+      - conditions:
+          - condition: template
+            value_template: "{{ any_open }}"
+        sequence:
+          - choose:
+              # Heating is off (summer / manually off) -> do nothing
+              - conditions:
+                  - condition: template
+                    value_template: "{{ mode == 'off' }}"
+                sequence: []
+
+              # Auto mode and not yet paused -> set to 6 °C
+              - conditions:
+                  - condition: template
+                    value_template: "{{ mode == 'auto' and not is_paused }}"
+                sequence:
+                  - service: climate.set_temperature
+                    target:
+                      entity_id: !input climate_target
+                    data:
+                      temperature: 6.0
+
+            default: []
+            # Already paused (is_paused) -> do nothing
+
+      # --- ALL WINDOWS CLOSED ---
+      - conditions:
+          - condition: template
+            value_template: "{{ not any_open }}"
+        sequence:
+          - choose:
+              # Still paused (still 6 °C) -> restore auto
+              - conditions:
+                  - condition: template
+                    value_template: "{{ is_paused }}"
+                sequence:
+                  - service: climate.set_hvac_mode
+                    target:
+                      entity_id: !input climate_target
+                    data:
+                      hvac_mode: auto
+
+            default: []
+            # No longer paused -> do nothing (respect manual override)
