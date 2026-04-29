@@ -59,7 +59,16 @@ async def test_fenster_heizung_automation(hass, enable_custom_integrations):
 
     # The automation should call climate.set_temperature with 6.0
     assert len(service_calls) == 1
-    assert service_calls[0].domain == "climate"
-    assert service_calls[0].service == "set_temperature"
-    assert service_calls[0].data["temperature"] == 6.0
-    assert service_calls[0].data["entity_id"] == ["climate.thermostat_bedroom"]
+    assert [
+        {"domain": c.domain, "service": c.service, "data": dict(c.data)}
+        for c in service_calls
+    ] == [
+        {
+            "domain": "climate",
+            "service": "set_temperature",
+            "data": {
+                "entity_id": ["climate.thermostat_bedroom"],
+                "temperature": 6.0,
+            },
+        }
+    ]
