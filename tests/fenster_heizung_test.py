@@ -137,6 +137,32 @@ async def test_second_of_two_opens_while_paused(hass, enable_custom_integrations
     assert_calls(calls, [])
 
 
+async def test_single_window_as_string(hass, enable_custom_integrations):
+    """Single entity selected via multiple:true returns a string, not a list."""
+    hass.states.async_set("binary_sensor.window", "off")
+    hass.states.async_set("climate.thermostat", "auto", {"temperature": 20.0})
+
+    # In real HA a single-entity multiple:true selector gives a plain string
+    calls = await setup_automation(hass, "climate.thermostat", "binary_sensor.window")
+
+    hass.states.async_set("binary_sensor.window", "on")
+    await hass.async_block_till_done()
+
+    assert_calls(
+        calls,
+        [
+            {
+                "domain": "climate",
+                "service": "set_temperature",
+                "data": {
+                    "entity_id": ["climate.thermostat"],
+                    "temperature": 6.0,
+                },
+            }
+        ],
+    )
+
+
 # ─────────────────────────── Window Close Scenarios ───────────────────────────
 
 

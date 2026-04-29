@@ -50,7 +50,7 @@ blueprint:
 variables:
   climate: !input climate_target
   windows: !input window_sensors
-  any_open: "{{ windows | select('is_state', 'on') | list | count > 0 }}"
+  any_open: "{{ expand(windows) | selectattr('state', 'eq', 'on') | list | count > 0 }}"
   is_paused: "{{ state_attr(climate, 'temperature') | float(0) == 6.0 }}"
   mode: "{{ states(climate) }}"
 
