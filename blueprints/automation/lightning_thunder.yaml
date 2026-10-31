@@ -186,7 +186,7 @@ actions:
         - variables:
             prev_on: "{{ is_state(strike_light, 'on') }}"
             prev_state: >-
-              {% set e = light %}
+              {% set e = strike_light %}
               {% set d = {'brightness': state_attr(e, 'brightness')} if state_attr(e, 'brightness') else {} %}
               {% set m = state_attr(e, 'color_mode') %}
               {% if m == 'color_temp' %}{% set d = d | combine({'color_temp_kelvin': state_attr(e, 'color_temp_kelvin')}) %}
