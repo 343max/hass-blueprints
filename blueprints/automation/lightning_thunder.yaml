@@ -181,7 +181,10 @@ actions:
             strike_light: >-
               {% set ok = lights | select('has_value') | list %}
               {{ (ok if ok else lights) | random }}
-            prev_on: "{{ is_state(light, 'on') }}"
+        # Separate step: variables in the same block render before the block
+        # itself is applied, so prev_* cannot reference strike_light above.
+        - variables:
+            prev_on: "{{ is_state(strike_light, 'on') }}"
             prev_state: >-
               {% set e = light %}
               {% set d = {'brightness': state_attr(e, 'brightness')} if state_attr(e, 'brightness') else {} %}
