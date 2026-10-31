@@ -227,10 +227,10 @@ actions:
             seconds: !input thunder_delay
         - if:
             - condition: template
-              value_template: "{{ speakers | count > 0 }}"
+              value_template: "{{ speakers | select('has_value') | list | count > 0 }}"
           then:
             - repeat:
-                for_each: "{{ speakers }}"
+                for_each: "{{ speakers | select('has_value') | list }}"
                 sequence:
                   - action: media_player.play_media
                     target:
