@@ -1,0 +1,209 @@
+blueprint:
+  name: Lightning & Thunder (Blitzlicht)
+  source_url: https://github.com/343max/hass-blueprints/blob/main/blueprints/automation/lightning_thunder.yaml
+  description: >-
+    Spooky lightning for a room: the lights flash full white for a moment, fade
+    out over half a second and a few moments later thunder plays on the room's
+    speaker. Repeats at random intervals while the enable switch is on.
+
+    Meant for Sonos (uses the AudioClip "announce" feature, which ducks and
+    restores playing music); other speakers fall back to normal playback.
+  domain: automation
+  input:
+    enable_toggle:
+      name: Enable switch
+      description: >-
+        input_boolean helper for this room. On = the effect loops, off = it
+        stops within a second.
+      selector:
+        entity:
+          domain: input_boolean
+          multiple: false
+    light_target:
+      name: Lights
+      description: The lights that flash (the lightning).
+      selector:
+        entity:
+          domain: light
+          multiple: true
+    speakers:
+      name: Speakers for the thunder
+      description: Leave empty for a light-only room.
+      default: []
+      selector:
+        entity:
+          domain: media_player
+          multiple: true
+    thunder_volume:
+      name: Thunder volume
+      description: 0 = leave the speaker volume alone.
+      default: 0.4
+      selector:
+        number:
+          min: 0
+          max: 1
+          step: 0.05
+          mode: slider
+    thunder_delay:
+      name: Pause between flash and thunder
+      description: Seconds after the fade-out before the thunder starts.
+      default: 1
+      selector:
+        number:
+          min: 0
+          max: 10
+          step: 0.1
+          mode: slider
+          unit_of_measurement: s
+    interval_min:
+      name: Minimum interval
+      description: Shortest random gap between two strikes.
+      default: 20
+      selector:
+        number:
+          min: 5
+          max: 3600
+          step: 1
+          mode: box
+          unit_of_measurement: s
+    interval_max:
+      name: Maximum interval
+      description: Longest random gap between two strikes.
+      default: 180
+      selector:
+        number:
+          min: 5
+          max: 3600
+          step: 1
+          mode: box
+          unit_of_measurement: s
+    flash_ms:
+      name: Flash duration
+      description: How long the light stays on at full brightness.
+      default: 150
+      selector:
+        number:
+          min: 50
+          max: 2000
+          step: 10
+          mode: slider
+          unit_of_measurement: ms
+    fade_s:
+      name: Fade-out duration
+      description: How long the light takes to fade to black.
+      default: 0.5
+      selector:
+        number:
+          min: 0
+          max: 3
+          step: 0.1
+          mode: slider
+          unit_of_measurement: s
+    brightness_pct:
+      name: Flash brightness
+      default: 100
+      selector:
+        number:
+          min: 1
+          max: 100
+          step: 1
+          mode: slider
+          unit_of_measurement: "%"
+    white_kelvin:
+      name: Flash colour temperature
+      description: >-
+        White point of the flash. Lights without colour temperature support get
+        the closest equivalent (or just full brightness).
+      default: 6500
+      selector:
+        number:
+          min: 2000
+          max: 6500
+          step: 100
+          mode: slider
+          unit_of_measurement: K
+variables:
+  toggle: !input enable_toggle
+  speakers: !input speakers
+  # Thunder samples are published once for all rooms: GitHub Pages of
+  # github.com/343max/hass-blueprints (CC0/CC-BY, see sounds/CREDITS.md).
+  thunder_urls:
+    - https://343max.github.io/hass-blueprints/sounds/thunder-01.mp3
+    - https://343max.github.io/hass-blueprints/sounds/thunder-02.mp3
+    - https://343max.github.io/hass-blueprints/sounds/thunder-03.mp3
+    - https://343max.github.io/hass-blueprints/sounds/thunder-04.mp3
+    - https://343max.github.io/hass-blueprints/sounds/thunder-05.mp3
+    - https://343max.github.io/hass-blueprints/sounds/thunder-06.mp3
+    - https://343max.github.io/hass-blueprints/sounds/thunder-07.mp3
+    - https://343max.github.io/hass-blueprints/sounds/thunder-08.mp3
+    - https://343max.github.io/hass-blueprints/sounds/thunder-09.mp3
+  # Inputs are not usable in templates unless bound to a variable.
+  interval_min: !input interval_min
+  interval_max: !input interval_max
+mode: single
+max_exceeded: silent
+triggers:
+  # Normal start/stop: the room switch.
+  - trigger: state
+    entity_id: !input enable_toggle
+    to: "on"
+  # Re-arm after a Home Assistant restart (a plain repeat loop dies with it).
+  - trigger: homeassistant
+    event: start
+  # Self-heal: re-arm if the loop was lost (e.g. automations reloaded). Dropped
+  # silently by mode: single while the loop is already running.
+  - trigger: time_pattern
+    minutes: /5
+conditions:
+  - condition: state
+    entity_id: !input enable_toggle
+    state: "on"
+actions:
+  - repeat:
+      while:
+        - condition: state
+          entity_id: !input enable_toggle
+          state: "on"
+      sequence:
+        # --- lightning ---------------------------------------------------
+        - action: light.turn_on
+          target:
+            entity_id: !input light_target
+          data:
+            brightness_pct: !input brightness_pct
+            color_temp_kelvin: !input white_kelvin
+            transition: 0
+        - delay:
+            milliseconds: !input flash_ms
+        - action: light.turn_off
+          target:
+            entity_id: !input light_target
+          data:
+            transition: !input fade_s
+        # --- thunder -----------------------------------------------------
+        - delay:
+            seconds: !input thunder_delay
+        - if:
+            - condition: template
+              value_template: "{{ speakers | count > 0 }}"
+          then:
+            - repeat:
+                for_each: "{{ speakers }}"
+                sequence:
+                  - action: media_player.play_media
+                    target:
+                      entity_id: "{{ repeat.item }}"
+                    data:
+                      media_content_id: "{{ thunder_urls | random }}"
+                      media_content_type: music
+                      announce: true
+                      extra:
+                        volume: !input thunder_volume
+        # --- random pause, interruptible by switching the room off --------
+        - wait_for_trigger:
+            - trigger: state
+              entity_id: !input enable_toggle
+              to: "off"
+          timeout:
+            seconds: "{{ range(interval_min | int, (interval_max | int) + 1) | list | random }}"
+          continue_on_timeout: true
