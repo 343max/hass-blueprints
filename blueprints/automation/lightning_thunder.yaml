@@ -51,7 +51,9 @@ blueprint:
           unit_of_measurement: "%"
     thunder_delay:
       name: Pause between flash and thunder
-      description: Seconds after the fade-out before the thunder starts.
+      description: >-
+        Seconds after the fade-out (and the restore of a light that was already
+        on) before the thunder starts.
       default: 1
       selector:
         number:
@@ -131,6 +133,7 @@ variables:
   toggle: !input enable_toggle
   speakers: !input speakers
   lights: !input light_target
+  fade_s: !input fade_s
   # Thunder samples are published once for all rooms: GitHub Pages of
   # github.com/343max/hass-blueprints (CC0/CC-BY, see sounds/CREDITS.md).
   thunder_urls:
@@ -172,9 +175,25 @@ actions:
           state: "on"
       sequence:
         # --- lightning ---------------------------------------------------
-        # Pick one light per strike (the same one for on and off).
+        # Pick one light per strike (the same one for on and off) and remember
+        # its state so a light that was already on can be restored.
         - variables:
-            strike_light: "{{ lights | random }}"
+            strike_light: >-
+              {% set ok = lights | select('has_value') | list %}
+              {{ (ok if ok else lights) | random }}
+            prev_on: "{{ is_state(light, 'on') }}"
+            prev_state: >-
+              {% set e = light %}
+              {% set d = {'brightness': state_attr(e, 'brightness')} if state_attr(e, 'brightness') else {} %}
+              {% set m = state_attr(e, 'color_mode') %}
+              {% if m == 'color_temp' %}{% set d = d | combine({'color_temp_kelvin': state_attr(e, 'color_temp_kelvin')}) %}
+              {% elif m == 'hs' %}{% set d = d | combine({'hs_color': state_attr(e, 'hs_color')}) %}
+              {% elif m == 'rgb' %}{% set d = d | combine({'rgb_color': state_attr(e, 'rgb_color')}) %}
+              {% elif m == 'rgbw' %}{% set d = d | combine({'rgbw_color': state_attr(e, 'rgbw_color')}) %}
+              {% elif m == 'rgbww' %}{% set d = d | combine({'rgbww_color': state_attr(e, 'rgbww_color')}) %}
+              {% elif m == 'xy' %}{% set d = d | combine({'xy_color': state_attr(e, 'xy_color')}) %}
+              {% endif %}
+              {{ d }}
         - action: light.turn_on
           target:
             entity_id: "{{ strike_light }}"
@@ -189,6 +208,17 @@ actions:
             entity_id: "{{ strike_light }}"
           data:
             transition: !input fade_s
+        # Let the fade finish, then put the room back the way it was.
+        - delay:
+            seconds: "{{ fade_s + 0.2 }}"
+        - if:
+            - condition: template
+              value_template: "{{ prev_on }}"
+          then:
+            - action: light.turn_on
+              target:
+                entity_id: "{{ strike_light }}"
+              data: "{{ prev_state }}"
         # --- thunder -----------------------------------------------------
         - delay:
             seconds: !input thunder_delay
